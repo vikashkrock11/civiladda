@@ -62,7 +62,7 @@
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Step 1: Set Exam Context</label>
                     <div class="flex gap-2">
                         <input type="text" id="examUrlInput" 
-                            placeholder="Right-click an exam link & Paste here..." 
+                            placeholder="Copy the result link of a student & Paste here..." 
                             class="flex-grow border border-gray-300 rounded px-3 py-2 text-sm focus:border-blue-500 outline-none text-gray-600 bg-gray-50 transition"
                             onfocus="this.select()">
                         <button id="btnSetContext" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm whitespace-nowrap transition shadow-sm">
@@ -139,7 +139,7 @@
         
         // --- State ---
         let appState = {
-            activeBaseUrl: "",
+            activeBaseUrl: "https://beu-bih.ac.in/result-one",
             activeParams: {},
             currentRegNo: "",
             isLoading: false
