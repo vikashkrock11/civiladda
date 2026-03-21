@@ -140,6 +140,15 @@
     </main>
 
     <script>
+        // ==========================================
+        // ⚙️ ADD YOUR DEFAULT EXAM URL HERE ⚙️
+        // Replace the link inside the quotes with your desired default URL.
+        // If you want it to start empty, leave it as: const DEFAULT_EXAM_URL = "";
+        // ==========================================
+        const DEFAULT_EXAM_URL = "https://beu-bih.ac.in/result-three?name=B.Tech.%206th%20Semester%20Examination,%202025&semester=VI&session=2025&regNo=231011080906&exam_held=November%2F2025";
+        // ==========================================
+
+
         // --- State ---
         let appState = {
             activeBaseUrl: "",
@@ -166,6 +175,14 @@
 
         function init() {
             resetApp();
+            
+            // Check if a default URL was provided and load it automatically
+            if (DEFAULT_EXAM_URL && DEFAULT_EXAM_URL.trim() !== "") {
+                setContextFromUrl(DEFAULT_EXAM_URL);
+                if (ui.regInput.value) {
+                    loadResult();
+                }
+            }
         }
 
         function resetApp() {
