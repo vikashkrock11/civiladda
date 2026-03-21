@@ -9,10 +9,14 @@
         .result-frame {
             border: none;
             width: 100%;
-            /* MASSIVE HEIGHT to kill internal scrolling on mobile */
-            height: 2200px; 
             background-color: #f9fafb;
+            transition: height 0.4s ease-in-out; /* Smooth resizing */
         }
+        
+        /* Smart Heights */
+        .frame-normal { height: 800px; }  /* For the shorter directory page */
+        .frame-tall { height: 1800px; } /* Expanded height to prevent double-scrolling on results */
+
         /* Remove number arrows */
         input::-webkit-outer-spin-button,
         input::-webkit-inner-spin-button {
@@ -113,6 +117,678 @@
                     <button id="btnCopyUrl" class="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded h-10 w-10 flex items-center justify-center transition" title="Copy Current Result URL">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                     </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- STEP 3: VIEW (The Result) -->
+        <div class="w-full max-w-6xl bg-white rounded shadow-xl overflow-hidden border border-gray-300 flex flex-col relative">
+            
+            <!-- Instructions Overlay (Shows on Directory Mode) -->
+            <div id="dirOverlay" class="bg-yellow-50 border-b border-yellow-200 p-3 text-center text-sm text-yellow-800 flex flex-col md:flex-row justify-center items-center gap-3">
+                <div class="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span><b>Instruction:</b> Find your exam below. <b>Right-Click / Long-Press</b> the link &rarr; <b>Copy Link Address</b> &rarr; Paste in "Step 1" above.</span>
+                </div>
+                <button id="btnTryCopyIframe" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-1.5 px-4 rounded text-xs transition whitespace-nowrap shadow-sm flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy Current Box URL
+                </button>
+            </div>
+
+            <div class="relative w-full">
+                <!-- Added frame-normal initially -->
+                <iframe id="resultFrame" class="result-frame frame-normal" src=""></iframe>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // --- Configuration ---
+        const DIRECTORY_URL = "https://beu-bih.ac.in/result-one";
+        
+        // --- State ---
+        let appState = {
+            activeBaseUrl: "https://beu-bih.ac.in/result-one",
+            activeParams: {},
+            currentRegNo: "",
+            isLoading: false
+        };
+
+        // --- Elements ---
+        const ui = {
+            urlInput: document.getElementById('examUrlInput'),
+            regInput: document.getElementById('regInput'),
+            step1Box: document.getElementById('step1Box'),
+            navHint: document.getElementById('navHint'),
+            btnSetContext: document.getElementById('btnSetContext'),
+            btnPrev: document.getElementById('btnPrev'),
+            btnNext: document.getElementById('btnNext'),
+            btnGo: document.getElementById('btnGo'),
+            btnExternal: document.getElementById('btnExternal'),
+            btnCopyUrl: document.getElementById('btnCopyUrl'),
+            iframe: document.getElementById('resultFrame'),
+            lblExam: document.getElementById('lblExamName'),
+            lblSession: document.getElementById('lblSession'),
+            dirOverlay: document.getElementById('dirOverlay'),
+            btnTryCopyIframe: document.getElementById('btnTryCopyIframe')
+        };
+
+        // --- Logic ---
+
+        function init() {
+            ui.iframe.addEventListener('load', handleIframeLoad);
+            loadDirectory();
+        }
+
+        function handleIframeLoad() {
+            if (!appState.isLoading) {
+                ui.navHint.classList.remove('hidden');
+                ui.step1Box.classList.add('highlight-pulse', 'border-orange-500');
+                
+                setTimeout(() => {
+                    ui.navHint.classList.add('hidden');
+                    ui.step1Box.classList.remove('highlight-pulse', 'border-orange-500');
+                }, 8000);
+            }
+            appState.isLoading = false;
+        }
+
+        function loadDirectory() {
+            appState.isLoading = true;
+            ui.iframe.src = DIRECTORY_URL;
+            
+            // Set dynamic height to normal for directory
+            ui.iframe.classList.remove('frame-tall');
+            ui.iframe.classList.add('frame-normal');
+            
+            // CLEAR THE UI COMPLETELY
+            ui.urlInput.value = ""; 
+            ui.regInput.value = "";
+            ui.lblExam.textContent = "Waiting for URL...";
+            ui.lblSession.textContent = "---";
+            ui.dirOverlay.style.display = "flex";
+            ui.btnExternal.href = DIRECTORY_URL;
+            
+            // Clear internal state
+            appState.activeBaseUrl = "";
+            appState.activeParams = {};
+            appState.currentRegNo = "";
+        }
+
+        function setContextFromUrl(urlStr) {
+            try {
+                const url = new URL(urlStr);
+                appState.activeBaseUrl = url.origin + url.pathname;
+
+                const newParams = {};
+                let foundReg = null;
+
+                url.searchParams.forEach((val, key) => {
+                    if(key.toLowerCase() === 'regno' || key === 'registration_no') {
+                        foundReg = val;
+                    } else {
+                        newParams[key] = val;
+                    }
+                });
+
+                appState.activeParams = newParams;
+                
+                if(foundReg) {
+                    appState.currentRegNo = BigInt(foundReg);
+                    ui.regInput.value = appState.currentRegNo.toString();
+                } else {
+                    appState.currentRegNo = "";
+                    ui.regInput.value = "";
+                }
+
+                ui.urlInput.value = urlStr;
+                ui.lblExam.textContent = newParams.name || newParams.Exam_Name || "Custom Exam";
+                ui.lblSession.textContent = (newParams.session || "") + " " + (newParams.exam_held || "");
+                ui.dirOverlay.style.display = "none";
+                
+                ui.navHint.classList.add('hidden');
+                ui.step1Box.classList.remove('highlight-pulse', 'border-orange-500');
+
+            } catch(e) {
+                alert("Invalid URL. Please copy a full result link.");
+            }
+        }
+
+        function generateFullUrl(baseUrl, params, regNo) {
+            const url = new URL(baseUrl);
+            for(const [k, v] of Object.entries(params)) {
+                url.searchParams.set(k, v);
+            }
+            if(regNo) {
+                url.searchParams.set('regNo', regNo.toString());
+            }
+            return url.toString();
+        }
+
+        function loadResult() {
+            if(!appState.activeBaseUrl) {
+                alert("Please Set Exam Context (Step 1) first by pasting an exam URL.");
+                return;
+            }
+
+            const currentReg = ui.regInput.value.trim();
+            if(!currentReg) {
+                alert("Please enter a Registration Number.");
+                return;
+            }
+            
+            appState.isLoading = true; 
+            appState.currentRegNo = BigInt(currentReg);
+            const fullUrl = generateFullUrl(appState.activeBaseUrl, appState.activeParams, appState.currentRegNo);
+            
+            // Set dynamic height to tall to accommodate the result table
+            ui.iframe.classList.remove('frame-normal');
+            ui.iframe.classList.add('frame-tall');
+            
+            ui.iframe.src = fullUrl;
+            ui.btnExternal.href = fullUrl;
+            ui.dirOverlay.style.display = "none";
+        }
+
+        // Robust clipboard utility for mobile and desktop compatibility
+        function copyToClipboard(text, onSuccess, onError) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            
+            // Prevent scrolling to bottom
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+            textArea.style.opacity = "0";
+            
+            document.body.appendChild(textArea);
+            
+            // Mobile specific selection
+            textArea.focus();
+            textArea.select();
+            textArea.setSelectionRange(0, 99999);
+
+            try {
+                const successful = document.execCommand("copy");
+                if (successful) {
+                    onSuccess();
+                } else {
+                    onError();
+                }
+            } catch (err) {
+                onError();
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function copyCurrentUrl() {
+            const currentReg = ui.regInput.value.trim();
+            if(!currentReg || !appState.activeBaseUrl) {
+                alert("No active result to copy. Set an exam and registration number first.");
+                return;
+            }
+            
+            const fullUrl = generateFullUrl(appState.activeBaseUrl, appState.activeParams, BigInt(currentReg));
+            
+            copyToClipboard(fullUrl, () => {
+                const originalIcon = ui.btnCopyUrl.innerHTML;
+                ui.btnCopyUrl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+                ui.btnCopyUrl.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+                ui.btnCopyUrl.classList.add('bg-green-600', 'hover:bg-green-700');
+                
+                setTimeout(() => {
+                    ui.btnCopyUrl.innerHTML = originalIcon;
+                    ui.btnCopyUrl.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                    ui.btnCopyUrl.classList.remove('bg-green-600', 'hover:bg-green-700');
+                }, 2000);
+            }, () => {
+                alert("Failed to copy URL. Your browser might be blocking clipboard access.");
+            });
+        }
+
+        function tryCopyFromIframe() {
+            try {
+                // Attempt to read the inner URL. 
+                // WARNING: Browsers block this for Cross-Origin frames (CORS) on different domains.
+                const innerUrl = ui.iframe.contentWindow.location.href;
+                
+                if(innerUrl && innerUrl !== 'about:blank') {
+                    copyToClipboard(innerUrl, () => {
+                        alert("URL Successfully Copied!\n\nNow paste it in the Step 1 box.");
+                    }, () => {
+                        alert("Could not automatically copy. Please long-press the link and select 'Copy Link Address'.");
+                    });
+                } else {
+                    alert("Could not detect the URL. Please right-click/long-press the result link and select 'Copy Link Address'.");
+                }
+            } catch (error) {
+                // CORS error caught
+                alert("⚠️ Browser Security Blocked Auto-Copy!\n\nBrowsers do not allow reading URLs from external websites inside a box.\n\nPLEASE DO THIS INSTEAD:\n1. Find your result link inside the box below.\n2. LONG-PRESS (on mobile) or RIGHT-CLICK (on PC) the link.\n3. Select 'Copy link address' from the menu.\n4. Paste it in Step 1.");
+            }
+        }
+
+        // --- Event Listeners ---
+        ui.btnSetContext.addEventListener('click', () => {
+            const val = ui.urlInput.value.trim();
+            if(val) {
+                setContextFromUrl(val);
+                if (ui.regInput.value) {
+                    loadResult();
+                }
+            } else {
+                alert("Please paste an exam URL into the box.");
+            }
+        });
+
+        ui.btnPrev.addEventListener('click', () => {
+            if(!appState.activeBaseUrl || !appState.currentRegNo) return;
+            appState.currentRegNo = appState.currentRegNo - 1n;
+            ui.regInput.value = appState.currentRegNo.toString();
+            loadResult();
+        });
+
+        ui.btnNext.addEventListener('click', () => {
+            if(!appState.activeBaseUrl || !appState.currentRegNo) return;
+            appState.currentRegNo = appState.currentRegNo + 1n;
+            ui.regInput.value = appState.currentRegNo.toString();
+            load<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>∀ᗡᗡ∀ ⅂IɅIϽ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .result-frame {
+            border: none;
+            width: 100%;
+            background-color: #f9fafb;
+            transition: height 0.4s ease-in-out; /* Smooth resizing */
+        }
+        
+        /* Smart Heights */
+        .frame-normal { height: 800px; }  /* For the shorter directory page */
+        .frame-tall { height: 1800px; } /* Expanded height to prevent double-scrolling on results */
+
+        /* Remove number arrows */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        
+        /* Pulse animation for the hint */
+        @keyframes pulse-border {
+            0% { border-color: rgba(59, 130, 246, 0.5); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+            70% { border-color: rgba(59, 130, 246, 1); box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+            100% { border-color: rgba(59, 130, 246, 0.5); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        .highlight-pulse {
+            animation: pulse-border 2s infinite;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800">
+
+    <!-- Header -->
+    <header class="bg-slate-900 text-white shadow-lg z-30">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 class="text-xl font-bold flex items-center gap-2 uppercase tracking-wide">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+                ∀ᗡᗡ∀ ⅂IɅIϽ
+            </h1>
+            <button onclick="loadDirectory()" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded transition border border-slate-500 font-semibold shadow-sm">
+                Reset to Directory
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-grow flex flex-col items-center gap-4 p-4">
+
+        <!-- STEP 1: CONFIGURATION (The Context) -->
+        <div id="step1Box" class="w-full max-w-5xl bg-white p-4 rounded-lg shadow-md border-l-4 border-blue-500 transition-all duration-300 relative">
+            
+            <!-- Navigation Hint Toast (Initially Hidden) -->
+            <div id="navHint" class="hidden absolute -top-3 right-4 bg-orange-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg z-20 flex items-center gap-2 animate-bounce">
+                <span>⚠️ Page Changed! Paste new URL here to sync</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+            </div>
+
+            <div class="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                <div class="flex-grow w-full">
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Step 1: Set Exam Context</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="examUrlInput" 
+                            placeholder="Copy the result link of a student & Paste here..." 
+                            class="flex-grow border border-gray-300 rounded px-3 py-2 text-sm focus:border-blue-500 outline-none text-gray-600 bg-gray-50 transition"
+                            onfocus="this.select()">
+                        <button id="btnSetContext" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm whitespace-nowrap transition shadow-sm">
+                            Set Exam
+                        </button>
+                    </div>
+                    <p class="text-[10px] text-gray-400 mt-1">
+                        * Security rules prevent automatic syncing. Please paste the link manually when you navigate.
+                    </p>
+                </div>
+                
+                <!-- Active Context Display -->
+                <div class="hidden md:block w-px h-12 bg-gray-200 mx-4"></div>
+                
+                <div class="w-full md:w-1/3 text-sm">
+                    <div class="text-xs text-gray-400 font-bold uppercase">Active Exam:</div>
+                    <div id="lblExamName" class="font-semibold text-blue-900 truncate leading-tight">Waiting for URL...</div>
+                    <div id="lblSession" class="text-xs text-gray-500">---</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STEP 2: NAVIGATION (The Controls) -->
+        <div class="w-full max-w-5xl bg-white p-4 rounded-lg shadow-md border-l-4 border-green-500 sticky top-2 z-20">
+            <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+                <div class="w-full md:w-auto">
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Step 2: Navigate Students</label>
+                    <div class="flex items-center justify-center md:justify-start">
+                        <button id="btnPrev" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-l border border-r-0 border-gray-300 transition h-10 flex items-center">
+                            Prev
+                        </button>
+                        <input type="number" id="regInput" 
+                            class="border-y border-gray-300 h-10 w-44 text-center font-mono font-bold text-lg outline-none focus:border-blue-500 z-10"
+                            placeholder="Reg No">
+                        <button id="btnNext" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-r border border-l-0 border-blue-800 transition h-10 flex items-center shadow-sm">
+                            Next
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-2">
+                    <button id="btnGo" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded h-10 shadow-sm transition">
+                        Load Result
+                    </button>
+                    <a id="btnExternal" href="#" target="_blank" class="bg-slate-700 hover:bg-slate-800 text-white p-2 rounded h-10 w-10 flex items-center justify-center transition" title="Open in New Tab">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    </a>
+                    <button id="btnCopyUrl" class="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded h-10 w-10 flex items-center justify-center transition" title="Copy Current Result URL">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- STEP 3: VIEW (The Result) -->
+        <div class="w-full max-w-6xl bg-white rounded shadow-xl overflow-hidden border border-gray-300 flex flex-col relative">
+            
+            <!-- Instructions Overlay (Shows on Directory Mode) -->
+            <div id="dirOverlay" class="bg-yellow-50 border-b border-yellow-200 p-3 text-center text-sm text-yellow-800 flex flex-col md:flex-row justify-center items-center gap-3">
+                <div class="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span><b>Instruction:</b> Find your exam below. <b>Right-Click / Long-Press</b> the link &rarr; <b>Copy Link Address</b> &rarr; Paste in "Step 1" above.</span>
+                </div>
+                <button id="btnTryCopyIframe" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-1.5 px-4 rounded text-xs transition whitespace-nowrap shadow-sm flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy Current Box URL
+                </button>
+            </div>
+
+            <div class="relative w-full">
+                <!-- Added frame-normal initially -->
+                <iframe id="resultFrame" class="result-frame frame-normal" src=""></iframe>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // --- Configuration ---
+        const DIRECTORY_URL = "https://beu-bih.ac.in/result-one";
+        
+        // --- State ---
+        let appState = {
+            activeBaseUrl: "https://beu-bih.ac.in/result-one",
+            activeParams: {},
+            currentRegNo: "",
+            isLoading: false
+        };
+
+        // --- Elements ---
+        const ui = {
+            urlInput: document.getElementById('examUrlInput'),
+            regInput: document.getElementById('regInput'),
+            step1Box: document.getElementById('step1Box'),
+            navHint: document.getElementById('navHint'),
+            btnSetContext: document.getElementById('btnSetContext'),
+            btnPrev: document.getElementById('btnPrev'),
+            btnNext: document.getElementById('btnNext'),
+            btnGo: document.getElementById('btnGo'),
+            btnExternal: document.getElementById('btnExternal'),
+            btnCopyUrl: document.getElementById('btnCopyUrl'),
+            iframe: document.getElementById('resultFrame'),
+            lblExam: document.getElementById('lblExamName'),
+            lblSession: document.getElementById('lblSession'),
+            dirOverlay: document.getElementById('dirOverlay'),
+            btnTryCopyIframe: document.getElementById('btnTryCopyIframe')
+        };
+
+        // --- Logic ---
+
+        function init() {
+            ui.iframe.addEventListener('load', handleIframeLoad);
+            loadDirectory();
+        }
+
+        function handleIframeLoad() {
+            if (!appState.isLoading) {
+                ui.navHint.classList.remove('hidden');
+                ui.step1Box.classList.add('highlight-pulse', 'border-orange-500');
+                
+                setTimeout(() => {
+                    ui.navHint.classList.add('hidden');
+                    ui.step1Box.classList.remove('highlight-pulse', 'border-orange-500');
+                }, 8000);
+            }
+            appState.isLoading = false;
+        }
+
+        function loadDirectory() {
+            appState.isLoading = true;
+            ui.iframe.src = DIRECTORY_URL;
+            
+            // Set dynamic height to normal for directory
+            ui.iframe.classList.remove('frame-tall');
+            ui.iframe.classList.add('frame-normal');
+            
+            // CLEAR THE UI COMPLETELY
+            ui.urlInput.value = ""; 
+            ui.regInput.value = "";
+            ui.lblExam.textContent = "Waiting for URL...";
+            ui.lblSession.textContent = "---";
+            ui.dirOverlay.style.display = "flex";
+            ui.btnExternal.href = DIRECTORY_URL;
+            
+            // Clear internal state
+            appState.activeBaseUrl = "";
+            appState.activeParams = {};
+            appState.currentRegNo = "";
+        }
+
+        function setContextFromUrl(urlStr) {
+            try {
+                const url = new URL(urlStr);
+                appState.activeBaseUrl = url.origin + url.pathname;
+
+                const newParams = {};
+                let foundReg = null;
+
+                url.searchParams.forEach((val, key) => {
+                    if(key.toLowerCase() === 'regno' || key === 'registration_no') {
+                        foundReg = val;
+                    } else {
+                        newParams[key] = val;
+                    }
+                });
+
+                appState.activeParams = newParams;
+                
+                if(foundReg) {
+                    appState.currentRegNo = BigInt(foundReg);
+                    ui.regInput.value = appState.currentRegNo.toString();
+                } else {
+                    appState.currentRegNo = "";
+                    ui.regInput.value = "";
+                }
+
+                ui.urlInput.value = urlStr;
+                ui.lblExam.textContent = newParams.name || newParams.Exam_Name || "Custom Exam";
+                ui.lblSession.textContent = (newParams.session || "") + " " + (newParams.exam_held || "");
+                ui.dirOverlay.style.display = "none";
+                
+                ui.navHint.classList.add('hidden');
+                ui.step1Box.classList.remove('highlight-pulse', 'border-orange-500');
+
+            } catch(e) {
+                alert("Invalid URL. Please copy a full result link.");
+            }
+        }
+
+        function generateFullUrl(baseUrl, params, regNo) {
+            const url = new URL(baseUrl);
+            for(const [k, v] of Object.entries(params)) {
+                url.searchParams.set(k, v);
+            }
+            if(regNo) {
+                url.searchParams.set('regNo', regNo.toString());
+            }
+            return url.toString();
+        }
+
+        function loadResult() {
+            if(!appState.activeBaseUrl) {
+                alert("Please Set Exam Context (Step 1) first by pasting an exam URL.");
+                return;
+            }
+
+            const currentReg = ui.regInput.value.trim();
+            if(!currentReg) {
+                alert("Please enter a Registration Number.");
+                return;
+            }
+            
+            appState.isLoading = true; 
+            appState.currentRegNo = BigInt(currentReg);
+            const fullUrl = generateFullUrl(appState.activeBaseUrl, appState.activeParams, appState.currentRegNo);
+            
+            // Set dynamic height to tall to accommodate the result table
+            ui.iframe.classList.remove('frame-normal');
+            ui.iframe.classList.add('frame-tall');
+            
+            ui.iframe.src = fullUrl;
+            ui.btnExternal.href = fullUrl;
+            ui.dirOverlay.style.display = "none";
+        }
+
+        // Robust clipboard utility for mobile and desktop compatibility
+        function copyToClipboard(text, onSuccess, onError) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            
+            // Prevent scrolling to bottom
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+            textArea.style.opacity = "0";
+            
+            document.body.appendChild(textArea);
+            
+            // Mobile specific selection
+            textArea.focus();
+            textArea.select();
+            textArea.setSelectionRange(0, 99999);
+
+            try {
+                const successful = document.execCommand("copy");
+                if (successful) {
+                    onSuccess();
+                } else {
+                    onError();
+                }
+            } catch (err) {
+                onError();
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function copyCurrentUrl() {
+            const currentReg = ui.regInput.value.trim();
+            if(!currentReg || !appState.activeBaseUrl) {
+                alert("No active result to copy. Set an exam and registration number first.");
+                return;
+            }
+            
+            const fullUrl = generateFullUrl(appState.activeBaseUrl, appState.activeParams, BigInt(currentReg));
+            
+            copyToClipboard(fullUrl, () => {
+                const originalIcon = ui.btnCopyUrl.innerHTML;
+                ui.btnCopyUrl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+                ui.btnCopyUrl.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+                ui.btnCopyUrl.classList.add('bg-green-600', 'hover:bg-green-700');
+                
+                setTimeout(() => {
+                    ui.btnCopyUrl.innerHTML = originalIcon;
+                    ui.btnCopyUrl.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                    ui.btnCopyUrl.classList.remove('bg-green-600', 'hover:bg-green-700');
+                }, 2000);
+            }, () => {
+                alert("Failed to copy URL. Your browser might be blocking clipboard access.");
+            });
+        }
+
+        function tryCopyFromIframe() {
+            try {
+                // Attempt to read the inner URL. 
+                // WARNING: Browsers block this for Cross-Origin frames (CORS) on different domains.
+                const innerUrl = ui.iframe.contentWindow.location.href;
+                
+                if(innerUrl && innerUrl !== 'about:blank') {
+                    copyToClipboard(innerUrl, () => {
+                        alert("URL Successfully Copied!\n\nNow paste it in the Step 1 box.");
+                    }, () => {
+                        alert("Could not automatically copy. Please long-press the link and select 'Copy Link Address'.");
+                    });
+                } else {
+                    alert("Could not detect the URL. Please right-click/long-press the result link and select 'Copy Link Address'.");
+                }
+            } catch (error) {
+                // CORS error caught
+                alert("⚠️ Browser Security Blocked Auto-Copy!\n\nBrowsers do not allow reading URLs from external websites inside a box.\n\nPLEASE DO THIS INSTEAD:\n1. Find your result link inside the box below.\n2. LONG-PRESS (on mobile) or RIGHT-CLICK (on PC) the link.\n3. Select 'Copy link address' from the menu.\n4. Paste it in Step 1.");
+            }
+        }
+
+        // --- Event Listeners ---
+        ui.btnSetContext.addEventListener('click', () => {
+            const val = ui.urlInput.value.trim();
+            if(val) {
+                setContextFromUrl(val);
+                if (ui.regInput.value) {
+                    loadResult();
+                }
+            } else {
+                alert("Please paste an exam URL into the box.");
+            }
+        });
+
+        ui.btnPrev.addEventListener('click', () => {
+            if(!appState.activeBaseUrl || !appState.currentRegNo) return;
+            appState.currentRegNo = appState.currentRegNo - 1n;
+            ui.regInput.value = appState.currentRegNo.toString();
+            loadResult();
+        });
+
+        ui.btnNext.addEventListener('click', () => {
+            if(!appState.activeBaseUrl || !appState.currentRegNo) return;
+            appState.currentRegNo = appState.currentRegNo + 1n;
+            ui.regInput.value = appState.currentRegNo.toString();
+            load                    </button>
                 </div>
             </div>
         </div>
