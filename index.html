@@ -48,7 +48,7 @@
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Step 1: Set Exam Context (Paste Final URL Here)</label>
                     <div class="flex gap-2">
                         <input type="text" id="examUrlInput" 
-                            placeholder="e.g. https://beu-bih.ac.in/result-three?name=..." 
+                            placeholder="e.g. https://beu-bih.ac.in/... or https://results.beup.ac.in/..." 
                             class="flex-grow border border-gray-300 rounded px-3 py-2 text-sm focus:border-blue-500 outline-none text-gray-600 bg-gray-50 transition"
                             onfocus="this.select()">
                         <button id="btnSetContext" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm whitespace-nowrap transition shadow-sm">
@@ -145,7 +145,7 @@
         // Replace the link inside the quotes with your desired default URL.
         // If you want it to start empty, leave it as: const DEFAULT_EXAM_URL = "";
         // ==========================================
-        const DEFAULT_EXAM_URL = "https://beu-bih.ac.in/result-three?name=B.Tech.%206th%20Semester%20Examination,%202025&semester=VI&session=2025&regNo=231011080906&exam_held=November%2F2025";
+        const DEFAULT_EXAM_URL = "https://beu-bih.ac.in/result-three?name=B.Tech.%206th%20Semester%20Examination,%202025&semester=VI&session=2025&regNo=23101108906&exam_held=November%2F2025";
         // ==========================================
 
 
@@ -153,7 +153,9 @@
         let appState = {
             activeBaseUrl: "",
             activeParams: {},
-            currentRegNo: ""
+            currentRegNo: "",
+            regNoParamKey: "regNo",
+            isLoading: false
         };
 
         // --- Elements ---
@@ -198,15 +200,16 @@
             appState.activeBaseUrl = "";
             appState.activeParams = {};
             appState.currentRegNo = "";
+            appState.regNoParamKey = "regNo";
         }
 
         function setContextFromUrl(urlStr) {
             try {
                 const url = new URL(urlStr);
                 
-                // Ensure they pasted the final result-three page, not the directory
-                if(!url.pathname.includes("result-three")) {
-                    alert("Please paste the FINAL result URL (it usually contains 'result-three' and your Reg No).");
+                // Ensure they pasted a final result page containing a registration parameter
+                if(!url.search.toLowerCase().includes("reg")) {
+                    alert("Please paste the FINAL result URL that contains your Registration Number.");
                     return;
                 }
 
@@ -214,10 +217,13 @@
 
                 const newParams = {};
                 let foundReg = null;
+                appState.regNoParamKey = "regNo"; // default
 
                 url.searchParams.forEach((val, key) => {
-                    if(key.toLowerCase() === 'regno' || key === 'registration_no') {
+                    const kLower = key.toLowerCase();
+                    if(kLower === 'regno' || kLower === 'reg_no' || kLower === 'registration_no') {
                         foundReg = val;
+                        appState.regNoParamKey = key; // Preserve exact case from original URL
                     } else {
                         newParams[key] = val;
                     }
@@ -231,24 +237,26 @@
                 }
 
                 ui.urlInput.value = urlStr;
-                ui.lblExam.textContent = newParams.name || newParams.Exam_Name || "Custom Exam";
+                
+                const examLabel = newParams.name || newParams.Exam_Name || (newParams.Sem ? "Semester " + newParams.Sem : "Custom Exam");
+                ui.lblExam.textContent = examLabel;
                 ui.lblSession.textContent = (newParams.session || "") + " " + (newParams.exam_held || "");
                 
                 // Hide the setup overlay
                 ui.setupOverlay.style.display = "none";
 
             } catch(e) {
-                alert("Invalid URL. Please copy a full result link (e.g., https://beu-bih.ac.in/...)");
+                alert("Invalid URL. Please copy a full result link (e.g., https://beu-bih.ac.in/... or https://results.beup.ac.in/...)");
             }
         }
 
-        function generateFullUrl(baseUrl, params, regNo) {
+        function generateFullUrl(baseUrl, params, regNo, regKey) {
             const url = new URL(baseUrl);
             for(const [k, v] of Object.entries(params)) {
                 url.searchParams.set(k, v);
             }
             if(regNo) {
-                url.searchParams.set('regNo', regNo.toString());
+                url.searchParams.set(regKey || 'regNo', regNo.toString());
             }
             return url.toString();
         }
@@ -266,7 +274,7 @@
             }
             
             appState.currentRegNo = BigInt(currentReg);
-            const fullUrl = generateFullUrl(appState.activeBaseUrl, appState.activeParams, appState.currentRegNo);
+            const fullUrl = generateFullUrl(appState.activeBaseUrl, appState.activeParams, appState.currentRegNo, appState.regNoParamKey);
             
             ui.iframe.classList.remove('frame-normal');
             ui.iframe.classList.add('frame-tall');
@@ -304,7 +312,7 @@
                 return;
             }
             
-            const fullUrl = generateFullUrl(appState.activeBaseUrl, appState.activeParams, BigInt(currentReg));
+            const fullUrl = generateFullUrl(appState.activeBaseUrl, appState.activeParams, BigInt(currentReg), appState.regNoParamKey);
             
             copyToClipboard(fullUrl, () => {
                 const originalIcon = ui.btnCopyUrl.innerHTML;
@@ -365,5 +373,3 @@
     </script>
 </body>
 </html>
-
-
